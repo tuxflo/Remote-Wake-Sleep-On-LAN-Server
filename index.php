@@ -9,6 +9,39 @@ License: GPL v3 (http://www.gnu.org/licenses/gpl.html)
 //You should not need to edit this file. Adjust Parameters in the config file:
 require_once('config.php');
 
+    function WakeOnLan($addr, $mac) 
+    { 
+    $addr_byte = explode(':', $mac); 
+    $hw_addr = ''; 
+     
+    for ($a=0; $a < 6; $a++) $hw_addr .= chr(hexdec($addr_byte[$a])); 
+     
+    $msg = chr(255).chr(255).chr(255).chr(255).chr(255).chr(255); 
+     
+    for ($a = 1; $a <= 16; $a++) $msg .= $hw_addr; 
+     
+    // send it to the broadcast address using UDP 
+    // SQL_BROADCAST option isn't help!! 
+    $s = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP); 
+    if ($s == false) 
+    { 
+    echo "Error creating socket!\n"; 
+    echo "Error code is '".socket_last_error($s)."' - " . socket_strerror(socket_last_error($s)); 
+    } 
+    else 
+    { 
+    // setting a broadcast option to socket: 
+    $opt_ret = socket_set_option($s, 1, 6, TRUE); 
+    if($opt_ret < 0) 
+    { 
+    echo "setsockopt() failed, error: " . strerror($opt_ret) . "\n"; 
+    } 
+    $e = socket_sendto($s, $msg, strlen($msg), 0, $addr, 2050); 
+    echo $e;
+    socket_close($s); 
+    echo "Magic Packet sent (".$e.") to ".$addr.", MAC=".$mac; 
+    } 
+    } 
 //set headers that harden the HTTPS session
 if ($USE_HTTPS)
 {
@@ -155,20 +188,20 @@ else
 				if (!isset($_POST['submitbutton']) || (isset($_POST['submitbutton']) && !$approved_wake && !$approved_sleep))
 				{
 					echo "<h5 id='wait'>Querying Computer State. Please Wait...</h5>";
-					$pinginfo = exec("ping -c 1 " . $COMPUTER_LOCAL_IP[$selectedComputer]);
+						$pinginfo = fsockopen("$COMPUTER_LOCAL_IP[$selectedComputer]", 22, $errno, $errstr, 10);
 	    				?>
 	    				<script>
 						document.getElementById('wait').style.display = 'none';
 				        </script>
 	   					<?php
-					if ($pinginfo == "")
+					if (!$pinginfo)
 					{
 						$asleep = true;
 						echo "<h5>" . $COMPUTER_NAME[$selectedComputer] . " is presently asleep.</h5>";
 					}
 					else
 					{
-						$asleep = false;
+						$asleep = true;
 						echo "<h5>" . $COMPUTER_NAME[$selectedComputer] . " is presently awake.</h5>";
 					}
 				}
@@ -178,25 +211,32 @@ else
                 if ($approved_wake)
                 {
                 	echo "<p>Approved. Sending WOL Command...</p>";
-					exec ('wakeonlan ' . $COMPUTER_MAC[$selectedComputer]);
+    					WakeOnLan('192.168.178.255', $COMPUTER_MAC[$selectedComputer]); 
 					echo "<p>Command Sent. Waiting for " . $COMPUTER_NAME[$selectedComputer] . " to wake up...</p><p>";
 					$count = 1;
 					$down = true;
 					while ($count <= $MAX_PINGS && $down == true)
 					{
 						echo "Ping " . $count . "...";
-						$pinginfo = exec("ping -c 1 " . $COMPUTER_LOCAL_IP[$selectedComputer]);
-						$count++;
-						if ($pinginfo != "")
-						{
+
+						$fp = fsockopen("$COMPUTER_LOCAL_IP[$selectedComputer]", 22, $errno, $errstr, 30);
+						if (!$fp) {
+						    //echo "$errstr ($errno)<br />\n";
+							echo "<span style='color:#CC0000;'><b>Still Down.</b></span><br />";
+								$count++;
+						} else {
 							$down = false;
 							echo "<span style='color:#00CC00;'><b>It's Alive!</b></span><br />";
 							echo "<p><a href='?computer=" . $selectedComputer . "'>Return to the Wake/Sleep Control Home</a></p>";
 							$show_form = false;
-						}
-						else
-						{
-							echo "<span style='color:#CC0000;'><b>Still Down.</b></span><br />";
+						   // $out = "GET / HTTP/1.1\r\n";
+						   // $out .= "Host: www.example.com\r\n";
+						   // $out .= "Connection: Close\r\n\r\n";
+						   // fwrite($fp, $out);
+						   // while (!feof($fp)) {
+						   //     echo fgets($fp, 128);
+						   // }
+						    fclose($fp);
 						}
 						sleep($SLEEP_TIME);
 					}
